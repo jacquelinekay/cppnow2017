@@ -120,3 +120,9 @@ constexpr auto fold_left(const F& f, Xs&&... xs) {
   return result.state;
 }
 ```
+---
+# Link to slides
+
+https://github.com/jacquelinekay/cppnow2017/blob/master/lightning/slides.md
+
+Thanks for listening :snowman:
