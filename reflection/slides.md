@@ -9,7 +9,7 @@
 
 Jackie Kay
 C++ Now
-May 5th, 2017
+May 18th, 2017
 jackieokay.com
 
 <div align="right">
@@ -23,6 +23,7 @@ jackieokay.com
 </div>
 
 ---
+<!-- page_number: true -->
 
 <div align="center">
 <img src="img/dali_narcissus.jpg" height="550">
@@ -60,12 +61,12 @@ void draw(const T& shape) {
 One solution is costly at runtime:
 
 ```c++
-struct Shape {
+struct CompositeShape {
   std::vector<Box> boxes;
   std::vector<Circle> circles;
 };
 
-void draw(const Shape& shape) {
+void draw(const CompositeShape& shape) {
   for (const auto& box : shape.boxes) {
     draw(box);
   }
@@ -122,10 +123,10 @@ void render(const T& shape) {
 
 - Source code generation
   - Qt MOC
-- "Adapt struct" macros
-  - Fusion, Hana
 - Compiler tooling
   - siplasplas
+- "Adapt struct" macros
+  - Fusion, Hana
 - Arcane secrets
   - POD Flat Reflection (formerly magic_get)
 
@@ -135,6 +136,28 @@ void render(const T& shape) {
 - Build step parses C++ code annotated with Qt macros
 - Generates runtime metaobjects containing info like class name, methods, etc.
 - Also generates signal/slot machinery, custom RTTI, properties
+
+---
+# siplasplas
+
+Generates static introspection headers with libclang
+
+```
+class Foo { int i; };
+// generates in a separate header:
+template<>
+class Class<Foo>
+{
+public:
+    using Fields = typelist<Field<SourceInfo<
+                string<'i'>,                     // name
+                string<'f', 'o', 'o', '.', 'h'>, // file
+                4                                // line
+            >,
+            decltype(&Foo::i), &Foo::i, // Pointer
+        >>;
+};
+```
 
 ---
 # Adapt struct macros
@@ -171,6 +194,12 @@ hana::for_each(presenter, [](auto pair) {
 - Uses the identifier name and type to get the member pointer
 - Associates this into tuple of constexpr string, member pointer accessor pairs.
 - Template specialization required for 1 member, 2 members, ... up to N members
+
+---
+
+# Shout-out
+
+[Iguana](https://github.com/qicosmos/iguana), a serialization engine by Yu Qi, uses a similar technique for static reflection
 
 ---
 # POD Flat Reflection (pfr)
@@ -246,28 +275,6 @@ constexpr auto as_tuple_impl(T&& val, size_t_<100>) {
 ```
 
 ---
-# siplasplas
-
-Generate static introspection headers with libclang
-
-```
-class Foo { int i; };
-// generates in a separate header:
-template<>
-class Class<Foo>
-{
-public:
-    using Fields = typelist<Field<SourceInfo<
-                string<'i'>,                     // name
-                string<'f', 'o', 'o', '.', 'h'>, // file
-                4                                // line
-            >,
-            decltype(&Foo::i), &Foo::i, // Pointer
-        >>;
-};
-```
-
----
 
 # Other languages
 
@@ -278,6 +285,23 @@ public:
   - Uses runtime bytecode information, fairly extensive API
 - C\#
   - Arcane secrets
+
+---
+# D
+[`__traits`](https://dlang.org/spec/traits.html) provides `allMembers`, `getOverloads`, even `compiles`
+
+Also: the powers of [`mixin`](https://dlang.org/mixin.html):
+```D
+template GenStruct(string Name, string M1)
+{
+    const char[] GenStruct = "struct "
+        ~ Name ~ "{ int " ~ M1 ~ "; }";
+}
+
+mixin(GenStruct!("Foo", "bar"));
+// ...
+writeln(f.bar);
+```
 
 ---
 
@@ -361,7 +385,7 @@ meta::for_each<meta::get_data_members_m<MetaT>>(
   [&a, &b, &result](auto&& member) {
     using M = typename std::decay_t<decltype(member)>;
     constexpr auto p = meta::get_pointer<M>::value;
-    result &= equal(a.*p, b.*p);
+    result = result && equal(a.*p, b.*p);
   }
 );
 return result;
@@ -395,7 +419,7 @@ return result;
 
 # Fold expressions
 
-reflexpr can express sequence as a parameter pack:
+reflexpr can express sequences as parameter packs:
 
 ```
 template<typename ...Pack>
@@ -410,7 +434,7 @@ meta::unpack_sequence_t<meta::get_data_members_m<MetaT>,
     compare_fold>::apply(a, b);
 ```
 
-Compiler optimizations on fold expression could provide short circuiting
+Probably optimizes better than recursion!
 
 ---
 
@@ -446,7 +470,7 @@ assert(B(a).y == 42);
 # My 2p on access specifiers
 
 - Access specifiers are already "broken" in the language. They're still useful for interface design.
-- Guideline: prefer to reflect on public data members for serialization, etc. and hide implementation details in private members, to avoid breaking compatibility between library versions
+- Guideline: prefer to reflect on public data members for serialization, etc. and hide implementation details in private members, to avoid breaking compatibility between versions
 - Standardized API should include a convenience accessor for public member variables, to encourage this guideline
 
 ---
@@ -652,21 +676,25 @@ In our reflection examples, the hash input is a member name, and the hash output
 
 # string hash implementation
 
-A highly simplified version of the gperf algorithm
 
 ```c++
 template<typename... Strings>
 struct simple_string_hash {
-  static constexpr auto positions =
-    std::make_index_sequence<
-      max_string_length(Strings{}...)
-    >{};
-  static constexpr auto increments =
-    std::make_index_sequence<
-      decltype(positions)::size()
-    >{};
-  /* Implement runtime hash operators... */
+  static constexpr auto MaxLength
+    = max_string_length(Strings{}...);
+
+  auto operator()(const char* keyword) const {
+    unsigned total = strlen(keyword);
+    auto max = std::min(total, MaxLength);
+    for (unsigned i = 0; i < max; ++i) {
+      total += keyword[i] * (i + 1);
+    }
+    return total;
+  }
+
+  // ...
 };
+
 ```
 
 ---
@@ -674,18 +702,21 @@ struct simple_string_hash {
 # string hash implementation
 
 ```
-struct simple_string_hash {
-  template<size_t ...I>
-  static auto helper(
-      const char* key, const std::index_sequence<I...>&)
-  {
-    return ((key[I] + sequence_at<I>(increments)) + ...);
+  template<typename StringLiteral, size_t ...I>
+  static constexpr auto compute_helper(StringLiteral&&,
+      std::index_sequence<I...>) {
+    using S = std::decay_t<StringLiteral>;
+    return ((S::value().data()[I] * (I + 1)) + ...);
   }
 
-  auto operator()(const char* key) const {
-    return helper(key, positions) + strlen(key);
+  template<typename StringLiteral>
+  static constexpr auto hash(StringLiteral&& literal) {
+    using S = std::decay_t<StringLiteral>;
+    constexpr auto Length = S::value().size();
+    return compute_helper(
+        literal, std::make_index_sequence<Length>{})
+      + Length;
   }
-};
 ```
 ---
 
@@ -762,20 +793,17 @@ constexpr auto naive_string_hash(
 
 - Number of members in a struct rarely exceeds 10
 - Interface to this hash could be improved
-- Hash performance could be improved by "compressing" the representation (more work at compile time)
+- Hash is not perfect for all strings from 0 to max-length: exhaustive test finds some collisions
 - But, with or without reflection, metaprogramming could become more "practical" with efficient runtime to compile-time mappings
 
----
-
-# Miscellaneous thoughts on performance
 
 ---
 
 # Compile times
 
-- Type-based metaprogramming generally faster than value-based
-  - Refer to [metaben.ch](metaben.ch), Odin Holmes's blog and presentations
-- This is the best justification for `reflexpr` style API
+- "Alias-based" metaprogramming generally faster than value-based
+  - Refer to [metaben.ch](metaben.ch), Odin Holmes's blog and presentation
+- Probably the best justification for `reflexpr` style
 - priority(human time) > priority(compiler time)? Who decides?
 - Is compiler speed a library issue, language issue, or QoI issue?
 
@@ -898,6 +926,12 @@ struct Mock {
 };
 ```
 ---
+
+# How can we improve this syntax?
+
+Refer to [P0633R0](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0633r0.pdf), "Exploring the Design Space of metaprogramming and reflection", by Daveed Vandervoorde and Louis Dionne
+
+---
 # With $ and constexpr for (on steroids)
 ```c++
 template<typename T>
@@ -959,7 +993,7 @@ private:
 
 # And other customization points that suck less
 
-Hint: watch Michał Dominiak's talk
+Hint: watch Michał Dominiak's talk at this conference
 
 ---
 
@@ -987,9 +1021,9 @@ but you'll have to wait a few more months!
 
 This presentation wouldn't exist without:
 - Matúš Chochlík, Axel Naumann, and David Sankel for including me in discussions on reflection
-- Extra thank you to Matúš for providing `reflexpr`
-- Andrew Sutton for providing `operator$`
-- Louis Dionne for Hana and string hashing ideas
+- Extra thanks to Matúš for implementing `reflexpr`
+- Andrew Sutton for implementing `operator$`
+- Louis Dionne for Hana, P0633R0, and string hashing ideas
 - Vittorio Romeo for inspiring the program options example, feedback, and moral support
 
 ---
@@ -998,4 +1032,3 @@ This presentation wouldn't exist without:
 
 - github.com/jacquelinekay/reflection_experiments
 - github.com/jacquelinekay/c++now2017
-- github.com/jacquelinekay/dispatch
