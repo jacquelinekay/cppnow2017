@@ -39,8 +39,9 @@ jackieokay.com
 # Start not with the solution, but the problem.
 
 ---
+# A problem
 
-Problem: code duplication due to hardcoding knowledge about the layout of a type and its members.
+Code duplication due to hardcoding knowledge about the layout of a type.
 
 ```c++
 struct Box    { Point pos; float length; float width; };
@@ -85,7 +86,7 @@ struct Capsule {
   Box middle;
 };
 
-void render(const Capsule& shape) {
+void draw(const Capsule& shape) {
   for (const auto& circle : shape.ends) {
     draw(circle);
   }
@@ -104,10 +105,10 @@ How about an API that gets all the members for a generic type?
 // Ideal syntax
 
 template<typename T>
-void render(const T& shape) {
+void draw(const T& shape) {
   for... (auto& member : reflect(shape).members()) {
-    if constexpr (member.renderable()) {
-      render(member);
+    if constexpr (member.drawable()) {
+      draw(member);
     }
   }
 }
@@ -119,10 +120,10 @@ void render(const T& shape) {
 
 ---
 
-### C++ solutions for introspection
+### C++ solutions
 
-- Source code generation
-  - Qt MOC
+- Schema-based code generation
+  - Cap'n Proto
 - Compiler tooling
   - siplasplas
 - "Adapt struct" macros
@@ -131,23 +132,33 @@ void render(const T& shape) {
   - POD Flat Reflection (formerly magic_get)
 
 ---
-# Qt MOC (Meta-Object compiler)
+# Cap'n Proto
 
-- Build step parses C++ code annotated with Qt macros
-- Generates runtime metaobjects containing info like class name, methods, etc.
-- Also generates signal/slot machinery, custom RTTI, properties
+C++ code is generated from a schema:
+```
+struct Person {
+  name @0 :Text;
+  age  @1 :UInt32;
+}
+```
+becomes
+```c++
+// name @1 :Text;
+::capnp::Text::Reader getName();
+// age @0 :Int32;
+int32_t getAge();
+```
 
 ---
 # siplasplas
 
-Generates static introspection headers with libclang
+Generate compile-time reflection info with libclang
 
 ```
 class Foo { int i; };
 // generates in a separate header:
 template<>
-class Class<Foo>
-{
+class Class<Foo> {
 public:
     using Fields = typelist<Field<SourceInfo<
                 string<'i'>,                     // name
@@ -175,7 +186,7 @@ BOOST_HANA_ADAPT_STRUCT(Person, name, last_name, age);
 ```
 ---
 # Adapt struct macros
-```
+```c++
 Person presenter{"Jackie", "Kay", 24};
 hana::for_each(presenter, [](auto pair) {
   std::cout << hana::to<char const*>(hana::first(pair))
@@ -194,12 +205,6 @@ hana::for_each(presenter, [](auto pair) {
 - Uses the identifier name and type to get the member pointer
 - Associates this into tuple of constexpr string, member pointer accessor pairs.
 - Template specialization required for 1 member, 2 members, ... up to N members
-
----
-
-# Shout-out
-
-[Iguana](https://github.com/qicosmos/iguana), a serialization engine by Yu Qi, uses a similar technique for static reflection
 
 ---
 # POD Flat Reflection (pfr)
@@ -280,11 +285,11 @@ constexpr auto as_tuple_impl(T&& val, size_t_<100>) {
 
 - Python
   - Flexible and powerful, user-friendly syntax
-  - Language design philosophy (every struct is a dict, weak typing) contributes to this
 - Java
-  - Uses runtime bytecode information, fairly extensive API
+  - Extensive runtime API
 - C\#
-  - Arcane secrets
+  - Runtime introspection API
+  - Can "compile" and instantiate code at runtime
 
 ---
 # D
@@ -337,7 +342,7 @@ std::cout << "A " << meta::get_base_name_v<MetaInfo>
 ---
 # operator$
 
-```
+```c++
 namespace meta = cpp3k::meta::v1;
 constexpr auto info = $Person;
 std::cout << "A " << info.name() << " is made up of "
@@ -347,7 +352,11 @@ std::cout << "A " << info.name() << " is made up of "
 
 ---
 
-# What can we do with reflection?
+# Which API is better?
+
+---
+
+# Well, let's figure out how we want to use it first!
 
 ---
 
@@ -366,11 +375,8 @@ bool equal(const T& a, const T& b) {
       if (!equal(a[i], b[i])) return false;
     }
     return true;
-  } else {
-    /* Time for reflection */
-  }
+  } else { /* Time for reflection */ }
 }
-
 ```
 
 ---
@@ -401,7 +407,7 @@ bool result = true;
 meta::for_each($T.member_variables(),
   [&a, &b, &result](auto&& member){
     constexpr auto p = member.pointer();
-    result &= equal(a.*p, b.*p);
+    result = result && equal(a.*p, b.*p);
   }
 );
 return result;
@@ -421,7 +427,7 @@ return result;
 
 reflexpr can express sequences as parameter packs:
 
-```
+```c++
 template<typename ...Pack>
 struct compare_fold {
   static constexpr auto apply(const T& a, const T& b) {
@@ -434,7 +440,7 @@ meta::unpack_sequence_t<meta::get_data_members_m<MetaT>,
     compare_fold>::apply(a, b);
 ```
 
-Probably optimizes better than recursion!
+Can probably optimize better than for_each
 
 ---
 
@@ -467,7 +473,7 @@ assert(B(a).y == 42);
 
 ---
 
-# My 2p on access specifiers
+# My 2¢ on access specifiers
 
 - Access specifiers are already "broken" in the language. They're still useful for interface design.
 - Guideline: prefer to reflect on public data members for serialization, etc. and hide implementation details in private members, to avoid breaking compatibility between versions
@@ -478,6 +484,8 @@ assert(B(a).y == 42);
 # Serialization/deserialization
 
 ---
+
+# JSON deserialization
 
 Louis Dionne's Meeting C++ 2016 keynote showed a JSON serializer using a value-semantics metaprogramming mini-library built on top of `reflexpr`.
 
@@ -496,7 +504,7 @@ Requires matching a runtime string to a metainfo.
 ```c++
 // input: string_view representing the string to parse
 // parsed_keys: all key strings for a JSON object
-// result: enum 
+// result: error code (gets returned out of deserialize)
 for (const auto& key : parsed_keys) {
   const auto& value = parse_next_value(input);
   meta::for_each($T.member_variables(),
@@ -529,7 +537,7 @@ for (const auto& key : parsed_keys) {
 
 Struct member name corresponds to command line flag and abbreviation.
 
-```
+```c++
 struct ProgramOptions {
   std::string filename;  // --filename, -f
   int iterations = 100;  // --iterations, -i
@@ -555,7 +563,7 @@ optional<T> parse(int argc, char** argv const);
 
 # Program options: reflexpr
 
-```
+```c++
 template<typename T> struct OptionsMap {
   using MetaT = reflexpr(T);
   template<typename... MetaFields>
@@ -578,7 +586,7 @@ template<typename T> struct OptionsMap {
 
 # Program options: cpp3k
 
-```
+```c++
 template<typename T> struct OptionsMap {
   static constexpr auto prefix_map = hana::fold(
     refl::adapt_to_hana($T.member_variables()),
@@ -604,14 +612,14 @@ constexpr auto adapt_to_hana_helper(const T& t,
 - `get_base_name_v<reflexpr(T)>` returns a const char[N]
 - `$T.name()` returns a `const char*`
 - Can't pass these constexpr values to functions and use function parameters in a template context
-- Furthermore, `hana::map` string keys must be `hana::string`'s
+- `hana::map` string keys must be `hana::string`'s
 
 ---
 # Stop-gap solution
 
 Pass type of metainfo into a `get_name` function.
 
-```
+```c++
 template<typename T, size_t... I>
 constexpr auto helper(std::index_sequence<I...>) {
   return hana::string_c<T::name()[I]...>;
@@ -630,7 +638,7 @@ hana::insert(prefix_map,
 ---
 # Parsing and setting members
 
-```
+```c++
 auto set(T& opt, const char* prefix, const char* val) {
   hana::for_each(hana::keys(prefix_map),
     [&options, &prefix, &v](const auto& key) {
@@ -691,17 +699,15 @@ struct simple_string_hash {
     }
     return total;
   }
-
   // ...
 };
-
 ```
 
 ---
 
 # string hash implementation
 
-```
+```c++
   template<typename StringLiteral, size_t ...I>
   static constexpr auto compute_helper(StringLiteral&&,
       std::index_sequence<I...>) {
@@ -722,7 +728,7 @@ struct simple_string_hash {
 
 # Matching integer sets
 
-String hash is perfect, but not sequential. Need another mapping
+Even if string hash was perfect, it's not sequential. Need another mapping.
 
 <div align="center">
 <img src="img/mapping.png">
@@ -732,23 +738,22 @@ String hash is perfect, but not sequential. Need another mapping
 
 # Matching integer sets
 
-```
-template<template<size_t> typename F, size_t ...Sequence>
+```c++
+template<typename F, size_t ...Seq>
 struct recursive_switch_table {
-  using IndexSeq = std::index_sequence<Sequence...>;
+  using IndexSeq = std::index_sequence<Seq...>;
   template<size_t I, size_t Iterations>
   static auto apply(unsigned i) {
     switch(i) {
       case I:
-        return F<map_to_index<I, Sequence...>()>{}();
+        constexpr auto ic = map_to_index<I, Seq...>()>{};
+        return f(std::integral_constant<size_t, ic>{});
       default:
         constexpr unsigned n = Iterations + 1;
         return apply<sequence_at<n>(IndexSeq{}), n>(i);
     }
   }
-  void operator()(unsigned i) const {
-    return apply<sequence_at<0>(IndexSeq{}), 0>(i);
-  }
+  // ... syntactic sugar for apply
 };
 ```
 
@@ -760,14 +765,13 @@ Compare to naive (linear) implementation:
 ```c++
 // F: callback
 // StringSet: tuple of string literals
-template<template<size_t> typename F, typename StringSet,
-  size_t ...I>
-constexpr auto naive_string_hash(
+template<typename F, typename StringSet, size_t ...I>
+constexpr auto naive_string_hash(F&& f,
     StringSet&& set, std::index_sequence<I...>&&) {
-  return [set = std::move(set)](const char* input) {
-    ([&set, &input]() {
+  return [&f, &set](const char* input) {
+    ([&set, &input, &f]() {
       if (sl::equal(std::get<I>(string_set), input)) {
-        F<I>{}();
+        f(std::integral_constant<size_t, I>{});
       }
     }(), ...);
   };
@@ -785,15 +789,16 @@ constexpr auto naive_string_hash(
 
 # Results (-O3)
 
-![](img/string_hash_bar_graph.png)
+<div align="center">
+<img src="img/string_hash_bar_graph.png" height="520">
+</div>
 
 ---
 
 # Caveats/observations
 
 - Number of members in a struct rarely exceeds 10
-- Interface to this hash could be improved
-- Hash is not perfect for all strings from 0 to max-length: exhaustive test finds some collisions
+- Hash is not perfect for all strings from 0 to max-length: exhaustive test finds collisions. Lots of room for improvement
 - But, with or without reflection, metaprogramming could become more "practical" with efficient runtime to compile-time mappings
 
 
@@ -817,7 +822,7 @@ constexpr auto naive_string_hash(
 
 Ever written cryptic boilerplate metafunctions to get the arity of a function or an invocable?
 
-```
+```c++
 void f(int x, const std::string& name) {
   // ...
 }
@@ -834,20 +839,20 @@ constexpr unsigned arity_f = $f.parameters().size();
 # Reflection on overload sets
 Warning: fictional syntax
 
-```
+```c++
 void f(int x) {
   // ...function body...
 }
 void f(float x) {
   // ...function body...
 }
-
 // ...
-for... (const auto& overload : $f.overloads) {
+for... (const auto& overload : $f.overloads()) {
   // "int" in first iteration, "float" in the next
   using ArgT = decltype(overload.parameters()[0])::type;
 }
 ```
+But what would the order be?
 
 ---
 
@@ -874,7 +879,7 @@ I don't have access to a compiler with it implemented, so let's dream a bit...
 ---
 # "iddecl" example
 
-```
+```c++
 struct Person { int age; const char* name; };
 
 template<typename T>
@@ -897,7 +902,7 @@ std::cout << a.name << " is " << a.age << " years old.\n";
 
 (where better == more powerful)
 
-```
+```c++
 template<typename T>
 struct POD {
   (get_member_types_m<reflexpr(T)>
@@ -952,16 +957,17 @@ struct Mock {
 
 # Traits/interfaces ala [dyno](https://github.com/ldionne/dyno)
 
-```
+```c++
 struct DrawableInterface {
   virtual void draw(std::ostream& out) = 0;
 };
 
-using drawable = concept_map<DrawableInterface>;
-
 struct Square {
   void draw(std::ostream& out) const { out << "Square"; }
 };
+
+// What is concept_map?
+using drawable = concept_map<DrawableInterface>;
 
 void f(drawable const& d) {
   d.draw(std::cout);
@@ -971,8 +977,8 @@ void f(drawable const& d) {
 ---
 # Traits/interfaces ala [dyno](https://github.com/ldionne/dyno)
 
-```
-template<typename >
+```c++
+template<typename I>
 struct concept_map {
   constexpr {
     for...(const auto& function : $I.member_functions()) {
@@ -993,7 +999,7 @@ private:
 
 # And other customization points that suck less
 
-Hint: watch Michał Dominiak's talk at this conference
+Hint: watch Michał Dominiak's presentation
 
 ---
 
