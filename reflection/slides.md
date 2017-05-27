@@ -1,9 +1,11 @@
 <!-- $theme: gaia -->
+<!-- $size: 16:9 -->
+
 
 # Practical (?) Applications of Reflection
 
 <figure>
-<img src="img/Michelangelo_Caravaggio.jpg" height="420" align="right">
+<img src="img/Michelangelo_Caravaggio.jpg" height="500" align="right">
 </figure>
 
 
@@ -26,7 +28,7 @@ jackieokay.com
 <!-- page_number: true -->
 
 <div align="center">
-<img src="img/dali_narcissus.jpg" height="550">
+<img src="img/dali_narcissus.jpg" height="570">
 </div>
 	
 <font size="4">Alternative title image: "Metamorphosis of Narcissus", Salvador Dalí, 1937</font>
@@ -728,7 +730,8 @@ struct simple_string_hash {
 
 # Matching integer sets
 
-Even if string hash was perfect, it's not sequential. Need another mapping.
+Even if string hash is perfect, it's not sequential.
+Need another mapping to index into a struct.
 
 <div align="center">
 <img src="img/mapping.png">
@@ -783,7 +786,9 @@ constexpr auto naive_string_hash(F&& f,
 
 # Results (-O0)
 
-![](img/string_hash_bar_graph_o0.png)
+<div align="center">
+<img src="img/string_hash_bar_graph_o0.png" height="520">
+</div>
 
 ---
 
