@@ -10,8 +10,8 @@
 
 
 Jackie Kay
-C++ Now
-May 18th, 2017
+C++ London
+July 4th, 2017
 jackieokay.com
 &copy; 2017 (MIT License)
 
@@ -33,13 +33,6 @@ jackieokay.com
 </div>
 	
 <font size="4">Alternative title image: "Metamorphosis of Narcissus", Salvador Dalí, 1937</font>
-
----
-# What is reflection?
-
----
-
-# Start not with the solution, but the problem.
 
 ---
 # A problem
@@ -175,8 +168,8 @@ public:
 
 ---
 # Adapt struct macros
-Example lifted from [Boost Hana documentation](boostorg.github.io/hana):
 ```c++
+// from Boost Hana documentation, boostorg.github.io/hana
 struct Person {
   BOOST_HANA_DEFINE_STRUCT(Person,
     (std::string, name),
@@ -186,18 +179,11 @@ struct Person {
 // or, if Person is externally defined
 BOOST_HANA_ADAPT_STRUCT(Person, name, last_name, age);
 
-```
----
-# Adapt struct macros
-```c++
 Person presenter{"Jackie", "Kay", 24};
 hana::for_each(presenter, [](auto pair) {
   std::cout << hana::to<char const*>(hana::first(pair))
             << ": " << hana::second(pair) << std::endl;
 });
-// name: Jackie
-// last_name: Kay
-// age: 24
 ```
 ---
 
@@ -286,30 +272,10 @@ constexpr auto as_tuple_impl(T&& val, size_t_<100>) {
 
 # Other languages
 
-- Python
-  - Flexible and powerful, user-friendly syntax
-- Java
-  - Extensive runtime API
-- C\#
-  - Runtime introspection API
-  - Can "compile" and instantiate code at runtime
-
----
-# D
-[`__traits`](https://dlang.org/spec/traits.html) provides `allMembers`, `getOverloads`, even `compiles`
-
-Also: the powers of [`mixin`](https://dlang.org/mixin.html):
-```D
-template GenStruct(string Name, string M1)
-{
-    const char[] GenStruct = "struct "
-        ~ Name ~ "{ int " ~ M1 ~ "; }";
-}
-
-mixin(GenStruct!("Foo", "bar"));
-// ...
-writeln(f.bar);
-```
+- Python: Flexible and powerful, user-friendly syntax
+- Java: Extensive runtime API
+- C\#:  Runtime introspection and synthesis API
+- D: powerful compile-time intrsopection, mixins, hygienic macros
 
 ---
 
@@ -418,14 +384,6 @@ return result;
 
 ---
 
-# Observations
-
-- Using types to represent metainfo values has more syntactic overhead, especially when using lambdas
-- for_each requires valid initial state of result, doesn't allow early return/short circuting
-- What about private vs. public members?
-
----
-
 # Fold expressions
 
 reflexpr can express sequences as parameter packs:
@@ -444,43 +402,6 @@ meta::unpack_sequence_t<meta::get_data_members_m<MetaT>,
 ```
 
 Can probably optimize better than for_each
-
----
-
-# Access specifiers
-
-- `reflexpr` offers `get_data_members`, `get_public_data_members`, and `is_public/private` for individual member metainfo
-- `cpp3k` provides `is_public/private` but no convenience function for all public members
-
----
-
-# Bypassing private is easier*
-
-```c++
-class A { int x = 42; };
-struct B {
-  int y;
-  B(const A& a) {
-    y = a.*meta::get_pointer<
-      meta::get_element_m<
-        meta::get_data_members_m<reflexpr(A)>, 0
-      >>::value;
-  }
-};
-// ...
-A a;
-assert(B(a).y == 42);
-```
-
-<sub>*see blog post by [Johannes Schaub](http://bloglitb.blogspot.co.uk/2011/12/access-to-private-members-safer.html)</sub>
-
----
-
-# My 2¢ on access specifiers
-
-- Access specifiers are already "broken" in the language. They're still useful for interface design.
-- Guideline: prefer to reflect on public data members for serialization, etc. and hide implementation details in private members, to avoid breaking compatibility between versions
-- Standardized API should include a convenience accessor for public member variables, to encourage this guideline
 
 ---
 
@@ -564,29 +485,6 @@ optional<T> parse(int argc, char** argv const);
 
 ---
 
-# Program options: reflexpr
-
-```c++
-template<typename T> struct OptionsMap {
-  using MetaT = reflexpr(T);
-  template<typename... MetaFields>
-  struct make_prefix_map {
-    static constexpr auto helper() {
-      return hana::fold(
-        hana::make_tuple(MetaFields{}...),
-        hana::make_map(), collect_flags
-      );
-    }
-  };
-  static constexpr auto prefix_map =
-    meta::unpack_sequence_t<
-      meta::get_data_members_m<MetaT>,
-      make_prefix_map>::helper();
-};
-```
-
----
-
 # Program options: cpp3k
 
 ```c++
@@ -606,36 +504,6 @@ constexpr auto adapt_to_hana_helper(const T& t,
     cpp3k::meta::v1::cget<I>(t)...
   );
 }
-```
-
----
-
-# Constexpr string parameters
-
-- `get_base_name_v<reflexpr(T)>` returns a const char[N]
-- `$T.name()` returns a `const char*`
-- Can't pass these constexpr values to functions and use function parameters in a template context
-- `hana::map` string keys must be `hana::string`'s
-
----
-# Stop-gap solution
-
-Pass type of metainfo into a `get_name` function.
-
-```c++
-template<typename T, size_t... I>
-constexpr auto helper(std::index_sequence<I...>) {
-  return hana::string_c<T::name()[I]...>;
-}
-template<typename T>
-constexpr auto get_name() {
-  constexpr auto L = static_strlen(T::name());
-  return helper<T>(std::make_index_sequence<L>{});
-}
-// Usage:
-using T = std::decay_t<decltype(field)>;
-hana::insert(prefix_map,
-  hana::make_pair("--"_s + get_name<T>(), field));
 ```
 
 ---
@@ -661,7 +529,9 @@ auto set(T& opt, const char* prefix, const char* val) {
 
 # vs. boost::program_options
 
-![](img/reflopt_po.png)
+<div align="center">
+<img src="img/reflopt_po.png" height="520">
+</div>
 
 ---
 
@@ -685,115 +555,16 @@ In our reflection examples, the hash input is a member name, and the hash output
 
 ---
 
-# string hash implementation
+# Shameless plug: Petra
 
-
-```c++
-template<typename... Strings>
-struct simple_string_hash {
-  static constexpr auto MaxLength
-    = max_string_length(Strings{}...);
-
-  auto operator()(const char* keyword) const {
-    unsigned total = strlen(keyword);
-    auto max = std::min(total, MaxLength);
-    for (unsigned i = 0; i < max; ++i) {
-      total += keyword[i] * (i + 1);
-    }
-    return total;
-  }
-  // ...
-};
-```
+- My experimental library for runtime-to-compile time mappings
+- Inspired by these reflection examples, but has no dependencies on reflection
+- Includes a constexpr string hash (implementation of CHD algorithm)
+- https://github.com/jacquelinekay/petra
 
 ---
 
-# string hash implementation
-
-```c++
-  template<typename StringLiteral, size_t ...I>
-  static constexpr auto compute_helper(StringLiteral&&,
-      std::index_sequence<I...>) {
-    using S = std::decay_t<StringLiteral>;
-    return ((S::value().data()[I] * (I + 1)) + ...);
-  }
-
-  template<typename StringLiteral>
-  static constexpr auto hash(StringLiteral&& literal) {
-    using S = std::decay_t<StringLiteral>;
-    constexpr auto Length = S::value().size();
-    return compute_helper(
-        literal, std::make_index_sequence<Length>{})
-      + Length;
-  }
-```
----
-
-# Matching integer sets
-
-Even if string hash is perfect, it's not sequential.
-Need another mapping to index into a struct.
-
-<div align="center">
-<img src="img/mapping.png">
-</div>
-
----
-
-# Matching integer sets
-
-```c++
-template<typename F, size_t ...Seq>
-struct recursive_switch_table {
-  using IndexSeq = std::index_sequence<Seq...>;
-  template<size_t I, size_t Iterations>
-  static auto apply(unsigned i) {
-    switch(i) {
-      case I:
-        constexpr auto ic = map_to_index<I, Seq...>()>{};
-        return f(std::integral_constant<size_t, ic>{});
-      default:
-        constexpr unsigned n = Iterations + 1;
-        return apply<sequence_at<n>(IndexSeq{}), n>(i);
-    }
-  }
-  // ... syntactic sugar for apply
-};
-```
-
----
-
-# Benchmark
-
-Compare to naive (linear) implementation:
-```c++
-// F: callback
-// StringSet: tuple of string literals
-template<typename F, typename StringSet, size_t ...I>
-constexpr auto naive_string_hash(F&& f,
-    StringSet&& set, std::index_sequence<I...>&&) {
-  return [&f, &set](const char* input) {
-    ([&set, &input, &f]() {
-      if (sl::equal(std::get<I>(string_set), input)) {
-        f(std::integral_constant<size_t, I>{});
-      }
-    }(), ...);
-  };
-}
-```
-
----
-
-
-# Results (-O0)
-
-<div align="center">
-<img src="img/string_hash_bar_graph_o0.png" height="520">
-</div>
-
----
-
-# Results (-O3)
+# Results: linear vs CHD hash (-O3)
 
 <div align="center">
 <img src="img/string_hash_bar_graph.png" height="520">
@@ -804,228 +575,79 @@ constexpr auto naive_string_hash(F&& f,
 # Caveats/observations
 
 - Number of members in a struct rarely exceeds 10
-- Hash is not perfect for all strings from 0 to max-length: exhaustive test finds collisions. Lots of room for improvement
+- Hash is not perfect for all strings from 0 to max-length. Lots of room for improvement
 - But, with or without reflection, metaprogramming could become more "practical" with efficient runtime to compile-time mappings
 
+---
+
+# Shifting gears: recent developments
 
 ---
 
-# Compile times
+# Function reflection: P0670
 
-- "Alias-based" metaprogramming generally faster than value-based
-  - Refer to [metaben.ch](metaben.ch), Odin Holmes's blog and presentation
-- Probably the best justification for `reflexpr` style
-- priority(human time) > priority(compiler time)? Who decides?
-- Is compiler speed a library issue, language issue, or QoI issue?
+- `reflexpr` on function names, function declarations, lambdas (non-generic), function parameter names, lambda captures
+- `reflexpr` on a name generates an OverloadSet metaobject
+- No reference implementation yet
 
----
-
-# Shifting gears
-
----
-
-# Function reflection
-
-Ever written cryptic boilerplate metafunctions to get the arity of a function or an invocable?
-
-```c++
-void f(int x, const std::string& name) {
-  // ...
-}
-
-// ...
-
-constexpr unsigned arity_f = $f.parameters().size();
 ```
+void func(int);
 
-(Note: $ implementation requires name of function, doesn't support lambdas)
-
----
-
-# Reflection on overload sets
-Warning: fictional syntax
-
-```c++
-void f(int x) {
-  // ...function body...
-}
-void f(float x) {
-  // ...function body...
-}
-// ...
-for... (const auto& overload : $f.overloads()) {
-  // "int" in first iteration, "float" in the next
-  using ArgT = decltype(overload.parameters()[0])::type;
-}
+using func_overload_m = reflexpr(func);
+using func_m = get_element_t<0, get_overloads_t<func_overload_m>>;
+using param0_m = get_element_t<0, get_parameters_t<func_m>>;
+cout << get_name_v<get_type_t<param0_m>> << '\n'; // prints "int"
 ```
-But what would the order be?
 
 ---
 
 # What's missing?
+Introspection is only one piece of the puzzle.
+
+We need the ability to manipulate identifiers at compile-time.
 
 ---
 
-# Introspection is only one piece of the puzzle.
+# Metaclasses: P0707
 
----
-
-# We need the ability to manipulate identifiers at compile-time.
-
----
-
-# Manipulating identifiers
-
-I'll call this operator `iddecl`, for "identifier declaration".
-
-The idea is sometimes called `idreflexpr`, but I consider this mechanism orthogonal to reflection.
-
-I don't have access to a compiler with it implemented, so let's dream a bit...
-
----
-# "iddecl" example
-
-```c++
-struct Person { int age; const char* name; };
-
-template<typename T>
-struct A {
-  // Fictional syntax:
-  // Parameter pack expansion for member declaration
-  (get_member_types_m<reflexpr(T)>
-      iddecl(get_data_members_m<reflexpr(T)>))...;
-};
-
-A<Person> a{24, "jackie"};
-std::cout << a.name << " is " << a.age << " years old.\n";
+Define and re-use a compiler requirements for a set of similar classes
 ```
-
----
-# "How is this different from inheritance?"
-
----
-# It's better
-
-(where better == more powerful)
-
-```c++
-template<typename T>
-struct POD {
-  (get_member_types_m<reflexpr(T)>
-        iddecl(filter<
-          get_data_members_m<reflexpr(T)>, is_pod
-        >)
-  )...;
-};
-```
-
----
-# Mocking with iddecl
-
-```c++
-template<typename T>
-struct Mock {
-  using MetaT = reflexpr(T);
-  (get_member_function_types_m<MetaT>
-    iddecl(get_member_functions_m<MetaT>)
-      (Args... args)
-    {
-      // Mock library interface collects 
-      return impl<get_member_functions_m<MetaT>>(args...);
-    }
-  )...;
-};
-```
----
-
-# How can we improve this syntax?
-
-Refer to [P0633R0](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0633r0.pdf), "Exploring the Design Space of metaprogramming and reflection", by Daveed Vandervoorde and Louis Dionne
-
----
-# With $ and constexpr for (on steroids)
-```c++
-template<typename T>
-struct Mock {
+$class value {
   constexpr {
-    for...(const auto& function : $T.member_functions()) {
-      using Function = decltype(function);
-      Function::return_type
-      iddecl(function)(Function::arguments&& args) {
-        constexpr auto impl = impl_map.at(function);
-        return std::apply(impl, args);
-      }
-    }
+    if (find_if(value.functions(),
+      [](auto x){ return x.is_default_ctor(); }) != value.functions().end())
+    -> { basic_value() = default; }
+    /* similar for copy ctor, move ctor, copy assignment, move assignment */
+   for (auto f : value.functions()) {
+     compiler.require(!f.is_protected() && !f.is_virtual(),
+       "a value type must not have a protected or virtual function");
+     compiler.require(!f.is_dtor() || !f.is_public()),
+       "a value type must have a public destructor");
   }
-};
-```
----
-
-# Traits/interfaces ala [dyno](https://github.com/ldionne/dyno)
-
-```c++
-struct DrawableInterface {
-  virtual void draw(std::ostream& out) = 0;
-};
-
-struct Square {
-  void draw(std::ostream& out) const { out << "Square"; }
-};
-
-// What is concept_map?
-using drawable = concept_map<DrawableInterface>;
-
-void f(drawable const& d) {
-  d.draw(std::cout);
 }
 ```
-
 ---
-# Traits/interfaces ala [dyno](https://github.com/ldionne/dyno)
+# Metaclasses: usage
 
 ```c++
-template<typename I>
-struct concept_map {
-  constexpr {
-    for...(const auto& function : $I.member_functions()) {
-      using Function = decltype(function);
-      Function::return_type
-      iddecl(function)(Function::arguments&& args) {
-        return poly_.virtual_(
-          stringize(function.name()))(poly, args);
-      }
-    }
-  }
-private:
-  dyno::poly<Drawable> poly_;
-};
+value Point { int x;  int y; }
+Point p1; // ok, default construction works
+Point p2 = p1; // ok, copy construction works
+
+// If we add ordering requirements to value, this works too:
+assert (p1 == p1); // ok, == works
+assert (p1 >= p2); // ok, >= works
 ```
 
----
-
-# And other customization points that suck less
-
-Hint: watch Michał Dominiak's presentation
+Metaclasses enable a lot of uses for reflection!
 
 ---
 
-# Why is it missing right now?
+# Conclusion
 
-There's no precedent in the language: can only manipulate identifiers with the preprocessor.
+Reflection is awesome, powerful, and difficult to design for a statically typed language with so many language rules
 
-Can we use constexpr strings in an iddecl? How do you refer to the result of an iddecl? If you "clone" another struct's member with iddecl, do you maintain its default value, cv qualifiers, attributes, etc?
-
-We need a strong vision going forward.
-
----
-
-For that, I'll let this guy take the stage:
-
-<div align=center>
-<img src="img/herb.jpg" height="450">
-</div>
-
-but you'll have to wait a few more months!
+If you think it's interesting, read the papers, get involved in the SG7 mailing list, and build a reference compilers!
 
 ---
 
